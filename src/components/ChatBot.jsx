@@ -6,6 +6,12 @@ import { IoSend } from "react-icons/io5";
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
+// Base API URL comes from the env var, e.g.
+// VITE_API_URL=https://charandynamic-portfolio-backend.onrender.com/api
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+// Socket.IO needs the server origin (no trailing /api path)
+const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+
 const quickReplies = [
   "What skills do you have?",
   "Show me projects",
@@ -101,54 +107,44 @@ const ChatBot = () => {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    const basePort = 5000;
-    const maxAttempts = 5;
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+    });
+    socketRef.current = socket;
 
-    const connectSocket = (port) => {
-      const socket = io(`http://localhost:${port}`);
-      socketRef.current = socket;
+    socket.on('connect', () => {
+      setSocketConnected(true);
+    });
 
-      socket.on('connect', () => {
-        setSocketConnected(true);
-      });
+    socket.on('connect_error', () => {
+      setSocketConnected(false);
+    });
 
-      socket.on('connect_error', () => {
-        if (port < basePort + maxAttempts) {
-          setTimeout(() => {
-            socket.disconnect();
-            connectSocket(port + 1);
-          }, 1000);
-        }
-      });
+    socket.on('chat_response', (data) => {
+      setIsTyping(false);
+      const newMessage = {
+        id: Date.now(),
+        text: data.response,
+        sender: 'bot',
+        timestamp: data.timestamp,
+      };
+      setMessages(prev => [...prev, newMessage]);
+    });
 
-      socket.on('chat_response', (data) => {
-        setIsTyping(false);
-        const newMessage = {
-          id: Date.now(),
-          text: data.response,
-          sender: 'bot',
-          timestamp: data.timestamp,
-        };
-        setMessages(prev => [...prev, newMessage]);
-      });
+    socket.on('chat_error', () => {
+      setIsTyping(false);
+    });
 
-      socket.on('chat_error', () => {
-        setIsTyping(false);
-      });
-
-      socket.on('disconnect', () => {
-        setSocketConnected(false);
-      });
-    };
-
-    connectSocket(basePort);
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+    });
 
     if (isOpen) {
       fetchChatHistory();
     }
 
     return () => {
-      socketRef.current?.disconnect();
+      socket.disconnect();
     };
   }, [isOpen]);
 
@@ -172,25 +168,18 @@ const ChatBot = () => {
 
   const fetchChatHistory = async () => {
     try {
-      const basePort = 5000;
-      const maxAttempts = 5;
-      for (let port = basePort; port < basePort + maxAttempts; port++) {
-        try {
-          const response = await axios.get(`http://localhost:${port}/api/chat/history`);
-          if (response.data.success) {
-            const formatted = [];
-            for (const item of response.data.history) {
-              formatted.push({ id: item._id, text: item.message, sender: 'user', timestamp: item.timestamp });
-              formatted.push({ id: item._id + '_r', text: item.response, sender: 'bot', timestamp: item.timestamp });
-            }
-            if (formatted.length) setMessages(formatted);
-            break;
-          }
-        } catch {
-          continue;
+      const response = await axios.get(`${API_BASE_URL}/chat/history`);
+      if (response.data.success) {
+        const formatted = [];
+        for (const item of response.data.history) {
+          formatted.push({ id: item._id, text: item.message, sender: 'user', timestamp: item.timestamp });
+          formatted.push({ id: item._id + '_r', text: item.response, sender: 'bot', timestamp: item.timestamp });
         }
+        if (formatted.length) setMessages(formatted);
       }
-    } catch {}
+    } catch {
+      // Silently ignore — history is optional
+    }
   };
 
   const sendMessage = async () => {
@@ -207,19 +196,14 @@ const ChatBot = () => {
       user: 'guest',
     });
 
-    const basePort = 5000;
-    const maxAttempts = 5;
-    for (let port = basePort; port < basePort + maxAttempts; port++) {
-      try {
-        await axios.post(`http://localhost:${port}/api/chat/send`, {
-          message: inputMessage,
-          sessionId: socketRef.current.id,
-          user: 'guest',
-        });
-        break;
-      } catch {
-        continue;
-      }
+    try {
+      await axios.post(`${API_BASE_URL}/chat/send`, {
+        message: inputMessage,
+        sessionId: socketRef.current.id,
+        user: 'guest',
+      });
+    } catch {
+      // Socket already handles the live response; this is a fallback persistence call
     }
   };
 
