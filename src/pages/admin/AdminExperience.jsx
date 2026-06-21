@@ -7,6 +7,13 @@ import getTableStyles from "../../utils/tableStyles";
 
 const EMPTY = { companyName: "", designation: "", startDate: "", endDate: "", location: "", description: "" };
 
+
+  const Label = ({ children }) => (
+    <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text)" }}>{children}</label>
+  );
+  const Input = (props) => <input {...props} className="form-input" />;
+
+
 function AdminExperience() {
   const [experiences, setExperiences] = useState([]);
   const [formData, setFormData]       = useState(EMPTY);
@@ -33,11 +40,6 @@ function AdminExperience() {
     try { await api.delete(`/experience/${id}`); fetchExperiences(); }
     catch (e) { console.error(e); }
   };
-
-  const Label = ({ children }) => (
-    <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text)" }}>{children}</label>
-  );
-  const Input = (props) => <input {...props} className="form-input" />;
 
   const columns = [
     { name: "Company",    selector: r => r.companyName, sortable: true, grow: 1 },
